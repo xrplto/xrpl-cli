@@ -1,0 +1,16 @@
+{
+  "name": "xrpl-cli",
+  "version": "1.0.0",
+  "description": "XRPL CLI for LLM agents and automation",
+  "bin": {
+    "xrpl": "./bin/xrpl.js"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "ripple-keypairs": "^2.0.0",
+    "xrpl": "^4.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

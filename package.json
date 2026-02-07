@@ -1,10 +1,15 @@
 {
   "name": "xrpl-cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "XRPL CLI for LLM agents and automation",
   "bin": {
     "xrpl": "./bin/xrpl.js"
   },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
   "dependencies": {
     "commander": "^12.1.0",
     "ripple-keypairs": "^2.0.0",

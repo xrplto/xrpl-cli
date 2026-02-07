@@ -21,12 +21,38 @@ program
     if (opts.json) out.setJsonMode(true);
   });
 
+// ─── Helper: validate XRPL address ────────────────────────────
+const XRPL_ADDR_RE = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
+function requireAddress(address, label = 'address') {
+  if (!XRPL_ADDR_RE.test(address)) {
+    out.error(`Invalid XRPL ${label}: ${address}`, 1);
+  }
+  return address;
+}
+
+// ─── Helper: validate image file ──────────────────────────────
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const IMAGE_MIMES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+function readImageSafe(filePath) {
+  const imgPath = path.resolve(filePath);
+  if (!fs.existsSync(imgPath)) out.error(`Image file not found: ${imgPath}`, 1);
+  // Reject symlinks to prevent data exfiltration
+  const stat = fs.lstatSync(imgPath);
+  if (stat.isSymbolicLink()) out.error('Symlinks are not allowed for image files', 1);
+  if (stat.size > MAX_IMAGE_SIZE) out.error(`Image file too large (${(stat.size / 1024 / 1024).toFixed(1)}MB, max 5MB)`, 1);
+  const ext = path.extname(imgPath).toLowerCase().replace('.', '');
+  const mime = IMAGE_MIMES[ext];
+  if (!mime) out.error(`Unsupported image format: .${ext}. Use png, jpg, gif, or webp.`, 1);
+  const imgData = fs.readFileSync(imgPath);
+  return `data:${mime};base64,${imgData.toString('base64')}`;
+}
+
 // ─── Helper: require keypair ───────────────────────────────────
 function requireKeypair(opts) {
   const kp = wallet.load(opts?.keypair);
   if (!kp) {
     out.error(
-      `Keypair not found at ${wallet.getKeypairPath(opts?.keypair)}`,
+      'Keypair not found',
       11,
       'Run `xrpl keygen` to generate a keypair first.'
     );
@@ -93,7 +119,7 @@ program.command('signup')
     }
 
     // Create key via signature auth
-    const authHeaders = wallet.getAuthHeaders(kp);
+    const authHeaders = wallet.getAuthHeaders(kp, 'POST', '/keys');
     const result = await api.post('/keys', {
       body: { name: opts.name },
       authHeaders
@@ -208,7 +234,7 @@ keys.command('create')
   .option('-n, --name <name>', 'Key name', 'CLI Key')
   .action(async (opts) => {
     const kp = requireKeypair(program.opts());
-    const authHeaders = wallet.getAuthHeaders(kp);
+    const authHeaders = wallet.getAuthHeaders(kp, 'POST', '/keys');
     const result = await api.post('/keys', {
       body: { name: opts.name },
       authHeaders
@@ -227,7 +253,7 @@ keys.command('revoke <keyId>')
   .description('Revoke an API key')
   .action(async (keyId) => {
     const kp = requireKeypair(program.opts());
-    const authHeaders = wallet.getAuthHeaders(kp);
+    const authHeaders = wallet.getAuthHeaders(kp, 'DELETE', `/keys/${kp.address}/${keyId}`);
     const data = await api.del(`/keys/${kp.address}/${keyId}`, { authHeaders });
     out.success(data);
   });
@@ -321,7 +347,16 @@ cfg.command('set-key <apiKey>')
 cfg.command('set-url <url>')
   .description('Set API base URL')
   .action((url) => {
-    try { new URL(url); } catch { out.error('Invalid URL format', 1); }
+    let parsed;
+    try { parsed = new URL(url); } catch { out.error('Invalid URL format', 1); }
+    // Enforce HTTPS (allow localhost for development)
+    if (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(parsed.hostname)) {
+      out.error('Only HTTPS URLs are allowed (except localhost for development)', 1);
+    }
+    // Block cloud metadata and link-local addresses
+    if (['169.254.169.254', 'metadata.google.internal'].includes(parsed.hostname)) {
+      out.error('Blocked: cloud metadata endpoint', 1);
+    }
     config.set('baseUrl', url);
     out.success({ saved: true, baseUrl: url });
   });
@@ -342,7 +377,7 @@ cfg.command('show')
     const c = config.load();
     out.success({
       baseUrl: c.baseUrl,
-      apiKey: c.apiKey ? c.apiKey.substring(0, 12) + '...' : null,
+      apiKey: c.apiKey ? c.apiKey.substring(0, 8) + '***' : null,
       wallet: c.wallet,
       keypair: wallet.keypairExists() ? wallet.DEFAULT_KEYPAIR_PATH : null,
       configFile: config.CONFIG_FILE
@@ -504,6 +539,7 @@ account.command('info <address>')
 account.command('offers <address>')
   .description('Account trading offers')
   .action(async (address) => {
+    requireAddress(address);
     const data = await api.get(`/account/offers/${address}`);
     out.success(data);
   });
@@ -511,6 +547,7 @@ account.command('offers <address>')
 account.command('objects <address>')
   .description('Account objects (escrows, checks, etc.)')
   .action(async (address) => {
+    requireAddress(address);
     const data = await api.get(`/account/objects/${address}`);
     out.success(data);
   });
@@ -518,6 +555,7 @@ account.command('objects <address>')
 account.command('ancestry <address>')
   .description('Account genealogy (parents, children, tokens)')
   .action(async (address) => {
+    requireAddress(address);
     const data = await api.get(`/account/ancestry/${address}`);
     out.success(data);
   });
@@ -525,6 +563,7 @@ account.command('ancestry <address>')
 account.command('nfts <address>')
   .description('Account NFTs')
   .action(async (address) => {
+    requireAddress(address);
     const data = await api.get(`/account/nfts/${address}`);
     out.success(data);
   });
@@ -532,6 +571,7 @@ account.command('nfts <address>')
 account.command('token-stats <address> <md5>')
   .description('Per-account per-token trading stats')
   .action(async (address, md5) => {
+    requireAddress(address);
     const data = await api.get(`/account/token-stats/${address}/${md5}`);
     out.success(data);
   });
@@ -804,16 +844,9 @@ launch.command('create')
     if (opts.twitter) body.twitter = opts.twitter;
     if (bundleRecipients.length > 0) body.bundleRecipients = bundleRecipients;
 
-    // Read image file if provided
+    // Read image file if provided (with size + symlink checks)
     if (opts.image) {
-      const imgPath = path.resolve(opts.image);
-      if (!fs.existsSync(imgPath)) {
-        out.error(`Image file not found: ${imgPath}`, 1);
-      }
-      const imgData = fs.readFileSync(imgPath);
-      const ext = path.extname(imgPath).toLowerCase().replace('.', '');
-      const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext] || 'image/png';
-      body.imageData = `data:${mime};base64,${imgData.toString('base64')}`;
+      body.imageData = readImageSafe(opts.image);
     }
 
     const data = await api.post('/launch-token', { body });
@@ -869,14 +902,7 @@ launch.command('image <sessionId>')
   .description('Upload token image for an active launch session')
   .requiredOption('--file <path>', 'Path to image file')
   .action(async (sessionId, opts) => {
-    const imgPath = path.resolve(opts.file);
-    if (!fs.existsSync(imgPath)) {
-      out.error(`Image file not found: ${imgPath}`, 1);
-    }
-    const imgData = fs.readFileSync(imgPath);
-    const ext = path.extname(imgPath).toLowerCase().replace('.', '');
-    const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext] || 'image/png';
-    const imageData = `data:${mime};base64,${imgData.toString('base64')}`;
+    const imageData = readImageSafe(opts.file);
     const data = await api.post(`/launch-token/${encodeURIComponent(sessionId)}/image`, { body: { imageData } });
     out.success(data);
   });
@@ -929,9 +955,8 @@ launch.command('claim <sessionId>')
     const xrpl = require('xrpl');
     const kp = requireKeypair(cmd.optsWithGlobals());
     const agentAddr = kp.address;
-    const agentWallet = xrpl.Wallet.fromSeed(kp.seed);
 
-    // 1. Get launch status
+    // 1. Get launch status (before loading seed into memory)
     const status = await api.get(`/launch-token/status/${encodeURIComponent(sessionId)}`, { rawResponse: true });
     if (status.status === 404) {
       out.error('Session not found', 20);
@@ -946,17 +971,14 @@ launch.command('claim <sessionId>')
       out.error('Launch must be completed before claiming', 1, { currentStatus: launch.status });
     }
 
-    // 2. Find the agent's check
+    // 2. Find the agent's check — verify ownership before proceeding
     let checkId = null;
     let amount = null;
 
-    // Check dev allocation (userCheckId)
-    if (launch.userCheckId) {
-      // The user_check_created step has the amount
+    // Check dev allocation (userCheckId) — match against userAddress from launch
+    if (launch.userCheckId && launch.userAddress === agentAddr) {
       const userStep = launch.steps?.find(s => s.step === 'user_check_created');
       if (userStep) {
-        // We can't definitively know the userAddress from the status response,
-        // so we try the userCheckId and let CheckCash fail if it's not ours
         checkId = launch.userCheckId;
         amount = String(userStep.amount);
       }
@@ -1020,6 +1042,8 @@ launch.command('claim <sessionId>')
     };
     delete trustSetTx.NetworkID;
 
+    // Load seed only at signing time, minimize exposure window
+    const agentWallet = xrpl.Wallet.fromSeed(kp.seed);
     const signedTrustSet = agentWallet.sign(trustSetTx);
 
     // 6. Submit TrustSet

@@ -1,10 +1,24 @@
 # xrpl-cli
 
-Command-line interface for XRPL token analytics, market data, and trading — built for LLM agents and automation.
+Official command-line interface for [xrpl.to](https://xrpl.to) — the leading XRPL token analytics and market data provider. Designed for LLM agents and automation.
 
-Connects to the [xrpl.to](https://xrpl.to) API for real-time XRP Ledger data including tokens, NFTs, AMM pools, trader analytics, and token launches.
+## Quick Start for Agents
 
-## Install
+```bash
+# 1. Generate a keypair
+xrpl keygen
+
+# 2. Create free account + API key (no funding required)
+xrpl signup
+
+# 3. Start using the API
+curl -H "X-Api-Key: YOUR_KEY" https://api.xrpl.to/v1/tokens?limit=10
+
+# 4. Check your usage
+xrpl usage
+```
+
+## Installation
 
 ```bash
 npm install -g xrpl-cli
@@ -12,194 +26,159 @@ npm install -g xrpl-cli
 
 Requires Node.js >= 18.
 
-## Quick Start
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `xrpl keygen` | Generate a new XRPL keypair |
+| `xrpl signup` | Create free account + API key |
+| `xrpl login` | Authenticate with existing wallet |
+| `xrpl keys` | List API keys |
+| `xrpl keys create` | Create a new API key |
+| `xrpl keys revoke <keyId>` | Revoke an API key |
+| `xrpl usage` | Show credits usage and billing |
+| `xrpl tiers` | Show available pricing tiers |
+| `xrpl upgrade` | Show upgrade options and payment info |
+| `xrpl docs` | Show API endpoints |
+| `xrpl health` | Check API health status |
+| `xrpl config` | Show current configuration |
+| `xrpl config set-key <key>` | Set API key |
+| `xrpl config set-url <url>` | Set API base URL |
+| `xrpl config reset` | Reset all configuration |
+
+## Keypair Management
+
+### Generate Keypair
 
 ```bash
-# 1. Generate an XRPL keypair
 xrpl keygen
-
-# 2. Create a free account (1M credits/month)
-xrpl signup
-
-# 3. Start querying
-xrpl token list
-xrpl token info SOLO
-xrpl account balance rN7n3473SaZBCG4dFL83w7p1W9cganksPc
 ```
 
-## LLM Agent Mode
+Output:
+```
+address: rN7n3473SaZBCG4dFL83w7p1W9cganksPc
+publicKey: ED2B8...
+path: /home/user/.xrpl-cli/keypair.json
 
-Pass `--json` to any command for structured JSON output. Exit codes indicate error categories:
+next_steps:
+  Run `xrpl signup` to create a free account and get an API key.
+  No funding required for free tier (1M credits/month).
+```
+
+### Default Keypair Path
+
+All commands use `~/.xrpl-cli/keypair.json` by default. Override with `-k`:
+
+```bash
+xrpl login -k /path/to/other/keypair.json
+```
+
+### Keypair Not Found
+
+```
+Error: Keypair not found
+  Run `xrpl keygen` to generate a keypair first.
+```
+
+## Signup Flow
+
+```bash
+xrpl signup
+```
+
+1. Signs a message with your XRPL keypair
+2. Creates account and API key on xrpl.to
+3. Saves API key to `~/.xrpl-cli/config.json`
+
+Free tier includes **1M credits/month** — no payment required.
+
+## JSON Output Mode
+
+Add `--json` flag for machine-readable output:
+
+```bash
+xrpl keys --json
+xrpl usage --json
+xrpl tiers --json
+```
+
+Example:
+```json
+{
+  "status": "logged_in",
+  "wallet": "rN7n3473SaZBCG4dFL83w7p1W9cganksPc",
+  "tier": "free",
+  "credits": 1000000,
+  "apiKeys": 1
+}
+```
+
+## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 10-19 | Auth errors |
-| 20-29 | Not found |
+| 10 | Not logged in |
+| 11 | Keypair not found |
+| 20 | Not found |
 | 30-39 | Rate limit / credits |
-| 40-49 | API / network errors |
+| 40 | API error |
+
+## API Endpoints
+
+Run `xrpl docs` to see all available API endpoints, or visit the full documentation:
 
 ```bash
-xrpl token info SOLO --json
-xrpl schema "token info" --json   # parameter schema for agent self-discovery
+curl https://api.xrpl.to/v1/tokens?limit=10
 ```
 
-## Commands
+**Authentication:** `X-Api-Key` header or `?apiKey=` query parameter.
 
-### Onboarding
+| Category | Example Endpoint |
+|----------|-----------------|
+| Tokens | `GET /tokens`, `GET /token/{id}`, `GET /search` |
+| Charts | `GET /ohlc/{id}`, `GET /sparkline/{id}` |
+| Trading | `GET /history`, `GET /orderbook`, `POST /submit` |
+| Account | `GET /account/balance/{address}`, `GET /account/tx/{address}` |
+| Traders | `GET /traders/{address}`, `GET /traders/portfolio/{address}` |
+| NFTs | `GET /nft/{id}`, `GET /nft/collections` |
+| Analytics | `GET /creator-activity/{id}`, `GET /tx/explain/{hash}` |
 
-| Command | Description |
-|---------|-------------|
-| `xrpl keygen` | Generate XRPL keypair (`~/.xrpl-cli/keypair.json`) |
-| `xrpl signup` | Create free account + API key |
-| `xrpl login` | Authenticate with existing keypair |
-| `xrpl upgrade` | Show tier upgrades and payment instructions |
+## Configuration
 
-### Token Data
+Config stored in `~/.xrpl-cli/`:
 
-| Command | Description |
-|---------|-------------|
-| `xrpl token list` | List tokens (sort by volume, market cap, trustlines, age) |
-| `xrpl token info <id>` | Token details by md5, slug, name, or issuer_currency |
-| `xrpl token review <id>` | Safety review and risk assessment |
-| `xrpl token flow <id>` | Creator token flow analysis |
-| `xrpl search <query>` | Search tokens, NFTs, collections, accounts |
+```
+~/.xrpl-cli/
+├── config.json    # API key, base URL, wallet
+└── keypair.json   # XRPL keypair (encrypted, chmod 600)
+```
 
-### Account
-
-| Command | Description |
-|---------|-------------|
-| `xrpl account balance <address>` | XRP balance with reserves and ranking |
-| `xrpl account tx <address>` | Transaction history |
-| `xrpl account trustlines <address>` | Trust lines |
-| `xrpl account info <address>` | Account info (live from node + DB) |
-| `xrpl account offers <address>` | Trading offers |
-| `xrpl account objects <address>` | Escrows, checks, etc. |
-| `xrpl account ancestry <address>` | Account genealogy |
-| `xrpl account nfts <address>` | Account NFTs |
-| `xrpl account token-stats <address> <md5>` | Per-token trading stats |
-
-### Market Data
-
-| Command | Description |
-|---------|-------------|
-| `xrpl price ohlc <id>` | OHLC candlestick data (1m, 5m, 15m, 1h, 4h, 1D, 1W) |
-| `xrpl price sparkline <id>` | Lightweight price sparkline |
-
-### Trading
-
-| Command | Description |
-|---------|-------------|
-| `xrpl trade history <md5>` | Trade history for a token |
-| `xrpl trade orderbook --quote <md5>` | DEX orderbook |
-| `xrpl trade quote <from> <to> <amount>` | DEX swap quote |
-| `xrpl submit <tx_blob>` | Submit signed transaction to XRPL |
-
-### Trader Analytics
-
-| Command | Description |
-|---------|-------------|
-| `xrpl traders profile <address>` | Trader profile with tokens traded |
-| `xrpl traders token <md5>` | Top traders for a token |
-| `xrpl traders portfolio <address>` | Trader portfolio holdings |
-
-### NFTs
-
-| Command | Description |
-|---------|-------------|
-| `xrpl nft info <nftId>` | NFT details |
-| `xrpl nft collections` | List collections |
-| `xrpl nft collection <slug>` | Collection details |
-| `xrpl nft offers <nftId>` | Buy/sell offers |
-| `xrpl nft history <nftId>` | NFT transaction history |
-
-### Token Launch
-
-| Command | Description |
-|---------|-------------|
-| `xrpl launch create` | Initialize a new token launch |
-| `xrpl launch status <sessionId>` | Poll launch progress |
-| `xrpl launch cancel <sessionId>` | Cancel and refund |
-| `xrpl launch calculate` | Calculate funding requirements |
-| `xrpl launch claim <sessionId>` | Claim dev/bundle allocation via CheckCash |
-| `xrpl launch image <sessionId>` | Upload token image |
-| `xrpl launch authorize <sessionId> <address>` | Authorize for anti-snipe |
-
-### Other
-
-| Command | Description |
-|---------|-------------|
-| `xrpl creator <id>` | Creator activity with risk signals |
-| `xrpl explain <hash>` | Explain a transaction in natural language |
-| `xrpl web-search <query>` | Web search via SearXNG |
-| `xrpl amm` | List AMM pools |
-| `xrpl holders <md5>` | Token holders / richlist |
-| `xrpl health` | API health status |
-| `xrpl docs` | Full API documentation |
-| `xrpl schema [command]` | Parameter schema (agent self-discovery) |
-
-### API Key Management
-
-| Command | Description |
-|---------|-------------|
-| `xrpl keys list [wallet]` | List API keys |
-| `xrpl keys create` | Create new API key |
-| `xrpl keys revoke <keyId>` | Revoke an API key |
-| `xrpl keys usage [wallet]` | Usage stats |
-| `xrpl keys credits [wallet]` | Credit balance |
-| `xrpl keys subscription [wallet]` | Current subscription |
-| `xrpl keys tiers` | Available pricing tiers |
-| `xrpl keys packages` | Credit packages |
-| `xrpl keys costs` | Endpoint credit costs |
-| `xrpl keys purchase` | Initiate tier upgrade or credit purchase |
-| `xrpl keys verify-payment <txHash>` | Verify XRP payment |
-
-### Configuration
-
-| Command | Description |
-|---------|-------------|
-| `xrpl config show` | Show current config |
-| `xrpl config set-key <apiKey>` | Set API key |
-| `xrpl config set-url <url>` | Set API base URL |
-| `xrpl config set-wallet <wallet>` | Set default wallet |
-| `xrpl config reset` | Reset all config |
-
-## Examples
+## Example: Full Agent Workflow
 
 ```bash
-# Top tokens by 24h volume
-xrpl token list --sort vol24hxrp --limit 10
+# Step 1: Check if keypair exists
+xrpl login --json
+# If "Keypair not found" error:
 
-# Get OHLC candles for a token
-xrpl price ohlc SOLO --interval 1h --from 1706745600000
-
-# Check trader P&L
-xrpl traders profile rN7n3473SaZBCG4dFL83w7p1W9cganksPc
-
-# Explain a transaction
-xrpl explain 9B2D3C4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2C
-
-# Launch a token
-xrpl launch create --currency MYTOKEN --supply 1000000 --amm-xrp 100 --name "My Token"
-
-# Agent workflow (all JSON)
+# Step 2: Generate keypair
 xrpl keygen --json
+# Note the wallet address
+
+# Step 3: Create account (free, no funding needed)
 xrpl signup --json
-xrpl token list --json --fields name,slug,price,vol24hxrp
-xrpl keys credits --json
+# Returns API key
+
+# Step 4: Check your keys
+xrpl keys --json
+
+# Step 5: Use the API
+curl -H "X-Api-Key: YOUR_KEY" https://api.xrpl.to/v1/tokens?limit=10
+
+# Step 6: Check usage
+xrpl usage --json
 ```
-
-## Config Files
-
-| File | Purpose |
-|------|---------|
-| `~/.xrpl-cli/config.json` | API key, base URL, default wallet |
-| `~/.xrpl-cli/keypair.json` | XRPL keypair (chmod 600) |
-
-## API
-
-Powered by [xrpl.to API](https://api.xrpl.to/v1/docs). Free tier includes 1M credits/month.
 
 ## License
 

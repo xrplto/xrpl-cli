@@ -124,17 +124,14 @@ export function signMessage(message: string, keypair: Keypair): SignResult {
   return { signature, publicKey, address: deriveAddress(publicKey) };
 }
 
-export function getAuthHeaders(keypair: Keypair, method: string, urlPath: string): AuthHeaders {
+export function getAuthHeaders(keypair: Keypair): AuthHeaders {
   const timestamp = String(Date.now());
-  const nonce = crypto.randomBytes(16).toString('hex');
-  // Bind signature to method + path + nonce to prevent replay
-  if (!method || !urlPath) throw new Error('Auth signature requires non-empty method and path');
-  const message = `${keypair.address}:${timestamp}:${nonce}:${method}:${urlPath}`;
+  // Server verifies: `${wallet}:${timestamp}` signed by wallet's keypair
+  const message = `${keypair.address}:${timestamp}`;
   const signed = signMessage(message, keypair);
   return {
     'X-Wallet': keypair.address,
     'X-Timestamp': timestamp,
-    'X-Nonce': nonce,
     'X-Signature': signed.signature,
     'X-Public-Key': signed.publicKey
   };

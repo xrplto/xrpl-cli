@@ -66,7 +66,8 @@ program.command('signup')
   .action(async (opts: { name: string; keypair?: string }) => {
     const kp = requireKeypair(opts);
 
-    const existing = await api.get<{ count?: number }>(`/keys/${kp.address}`, { rawResponse: true, authenticated: false });
+    const authHeaders = wallet.getAuthHeaders(kp);
+    const existing = await api.get<{ count?: number }>(`/keys/${kp.address}`, { rawResponse: true, authHeaders });
     if (existing.status === 200 && existing.data?.count && existing.data.count > 0) {
       out.error(
         `Wallet ${kp.address} already has ${existing.data.count} API key(s).`,
@@ -74,8 +75,6 @@ program.command('signup')
         'Run `xrpl login` to authenticate, or `xrpl keys` to see existing keys.'
       );
     }
-
-    const authHeaders = wallet.getAuthHeaders(kp, 'POST', '/keys');
     const result = await api.post<{ success?: boolean; error?: string; apiKey?: string; tier?: string; credits?: number }>('/keys', {
       body: { name: opts.name },
       authHeaders
@@ -110,7 +109,8 @@ program.command('login')
   .action(async (opts: { keypair?: string }) => {
     const kp = requireKeypair(opts);
 
-    const info = await api.get<{ count?: number; tier?: string; credits?: number }>(`/keys/${kp.address}`, { rawResponse: true, authenticated: false });
+    const authHeaders = wallet.getAuthHeaders(kp);
+    const info = await api.get<{ count?: number; tier?: string; credits?: number }>(`/keys/${kp.address}`, { rawResponse: true, authHeaders });
     if (info.status !== 200 || !info.data?.count) {
       out.error(
         `No account found for wallet ${kp.address}`,
@@ -139,10 +139,11 @@ const keys = program.command('keys').description('API key management');
 
 keys.command('list', { isDefault: true })
   .description('List API keys for your wallet')
-  .action(async () => {
-    const addr = config.get('wallet');
-    if (!addr) out.error('Not logged in. Run `xrpl signup` or `xrpl login` first.', 10);
-    const data = await api.get(`/keys/${addr}`);
+  .option('-k, --keypair <path>', 'Path to keypair file')
+  .action(async (opts: { keypair?: string }) => {
+    const kp = requireKeypair(opts);
+    const authHeaders = wallet.getAuthHeaders(kp);
+    const data = await api.get(`/keys/${kp.address}`, { authHeaders });
     out.success(data);
   });
 
@@ -152,7 +153,7 @@ keys.command('create')
   .option('-k, --keypair <path>', 'Path to keypair file')
   .action(async (opts: { name: string; keypair?: string }) => {
     const kp = requireKeypair(opts);
-    const authHeaders = wallet.getAuthHeaders(kp, 'POST', '/keys');
+    const authHeaders = wallet.getAuthHeaders(kp);
     const result = await api.post<{ apiKey?: string; config_saved?: boolean }>('/keys', {
       body: { name: opts.name },
       authHeaders
@@ -171,7 +172,7 @@ keys.command('revoke <keyId>')
   .option('-k, --keypair <path>', 'Path to keypair file')
   .action(async (keyId: string, opts: { keypair?: string }) => {
     const kp = requireKeypair(opts);
-    const authHeaders = wallet.getAuthHeaders(kp, 'DELETE', `/keys/${kp.address}/${keyId}`);
+    const authHeaders = wallet.getAuthHeaders(kp);
     const data = await api.del(`/keys/${kp.address}/${keyId}`, { authHeaders });
     out.success(data);
   });
@@ -179,12 +180,13 @@ keys.command('revoke <keyId>')
 // ─── Usage ───────────────────────────────────────────────────
 program.command('usage')
   .description('Show credits usage and billing info')
-  .action(async () => {
-    const addr = config.get('wallet');
-    if (!addr) out.error('Not logged in. Run `xrpl signup` or `xrpl login` first.', 10);
+  .option('-k, --keypair <path>', 'Path to keypair file')
+  .action(async (opts: { keypair?: string }) => {
+    const kp = requireKeypair(opts);
+    const authHeaders = wallet.getAuthHeaders(kp);
     const [usage, credits] = await Promise.all([
-      api.get(`/keys/${addr}/usage`),
-      api.get(`/keys/${addr}/credits`)
+      api.get(`/keys/${kp.address}/usage`, { authHeaders }),
+      api.get(`/keys/${kp.address}/credits`, { authHeaders })
     ]);
     out.success({ usage, credits });
   });
@@ -200,18 +202,19 @@ program.command('tiers')
 // ─── Upgrade ─────────────────────────────────────────────────
 program.command('upgrade')
   .description('Show upgrade options and payment instructions')
-  .action(async () => {
-    const w = config.get('wallet');
+  .option('-k, --keypair <path>', 'Path to keypair file')
+  .action(async (opts: { keypair?: string }) => {
+    const kp = wallet.load(opts?.keypair);
 
     const [tiers, subscription] = await Promise.all([
       api.get<{ tiers?: Array<{ name: string }>; paymentAddress?: string; xrpRate?: number }>('/keys/tiers', { authenticated: false }),
-      w ? api.get<{ subscription?: { tier?: string; credits?: number } }>(`/keys/${w}/subscription`, { rawResponse: true }).then(r => r.data) : null
+      kp ? api.get<{ subscription?: { tier?: string; credits?: number } }>(`/keys/${kp.address}/subscription`, { rawResponse: true, authHeaders: wallet.getAuthHeaders(kp) }).then(r => r.data) : null
     ]);
 
     const currentTier = subscription?.subscription?.tier || 'free';
 
     out.success({
-      wallet: w,
+      wallet: kp?.address ?? null,
       currentTier,
       currentCredits: subscription?.subscription?.credits,
       availableTiers: tiers.tiers?.filter(t => {

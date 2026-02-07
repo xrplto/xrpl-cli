@@ -14,7 +14,6 @@ export interface EncryptionEnvelope {
 export interface AuthHeaders {
   'X-Wallet': string;
   'X-Timestamp': string;
-  'X-Nonce': string;
   'X-Signature': string;
   'X-Public-Key': string;
 }

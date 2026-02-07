@@ -47,7 +47,6 @@ export async function request<T = unknown>(method: string, urlPath: string, opts
   if (authHeaders) {
     headers['X-Wallet'] = authHeaders['X-Wallet'];
     headers['X-Timestamp'] = authHeaders['X-Timestamp'];
-    headers['X-Nonce'] = authHeaders['X-Nonce'];
     headers['X-Signature'] = authHeaders['X-Signature'];
     headers['X-Public-Key'] = authHeaders['X-Public-Key'];
   }

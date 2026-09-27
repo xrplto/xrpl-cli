@@ -87,8 +87,14 @@ export function isPrivateOrBlockedHost(hostname: string): boolean {
   for (const range of PRIVATE_IP_RANGES) {
     if (range.test(resolved)) return true;
   }
-  // Block IPv6 loopback
+  // Block IPv6 loopback and IPv6-mapped IPv4 private addresses
   if (resolved === '::1' || resolved === '[::1]') return true;
+  const v4Mapped = resolved.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (v4Mapped) {
+    for (const range of PRIVATE_IP_RANGES) {
+      if (range.test(v4Mapped[1])) return true;
+    }
+  }
   return false;
 }
 

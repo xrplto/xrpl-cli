@@ -1,7 +1,8 @@
+import dns from 'dns';
 import * as config from './config';
 import * as output from './output';
 import type { AuthHeaders, RawApiResponse, RequestOptions } from './types';
-import { validateBaseUrl } from './types';
+import { validateBaseUrl, isPrivateOrBlockedHost } from './types';
 
 // Endpoints that don't need an API key
 const PUBLIC_PATHS = new Set([
@@ -31,6 +32,21 @@ export async function request<T = unknown>(method: string, urlPath: string, opts
   }
 
   const url = new URL(`${base}${urlPath}`);
+
+  // DNS resolution check — prevent DNS rebinding SSRF
+  const hostname = url.hostname;
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    try {
+      const resolved = await new Promise<string[]>((resolve, reject) => {
+        dns.resolve4(hostname, (err, addrs) => err ? reject(err) : resolve(addrs));
+      });
+      for (const ip of resolved) {
+        if (isPrivateOrBlockedHost(ip)) {
+          output.error(`Refusing connection: ${hostname} resolves to private IP ${ip}`, 40);
+        }
+      }
+    } catch {}
+  }
 
   if (query) {
     for (const [k, v] of Object.entries(query)) {

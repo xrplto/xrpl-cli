@@ -11,7 +11,7 @@ export const DEFAULT_KEYPAIR_PATH = path.join(CONFIG_DIR, 'keypair.json');
 // ─── Encryption helpers ──────────────────────────────────────
 function getMachineKey(): Buffer {
   const material = `${os.hostname()}:${process.getuid?.() ?? 0}:xrpl-cli-v1`;
-  return crypto.scryptSync(material, 'xrpl-cli-keypair-salt', 32);
+  return crypto.scryptSync(material, 'xrpl-cli-keypair-salt', 32, { N: 16384, r: 8, p: 2 });
 }
 
 function encryptData(plaintext: string): EncryptionEnvelope {
@@ -72,7 +72,8 @@ export function generate(): Keypair {
 
   // Encrypt before writing — use 'wx' flag for exclusive create (prevents TOCTOU race)
   const envelope = encryptData(JSON.stringify(data));
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(CONFIG_DIR, 0o700); } catch {}
   fs.writeFileSync(DEFAULT_KEYPAIR_PATH, JSON.stringify(envelope, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 
   return data;
@@ -124,10 +125,12 @@ export function signMessage(message: string, keypair: Keypair): SignResult {
   return { signature, publicKey, address: deriveAddress(publicKey) };
 }
 
-export function getAuthHeaders(keypair: Keypair): AuthHeaders {
+export function getAuthHeaders(keypair: Keypair, method?: string, path?: string): AuthHeaders {
   const timestamp = String(Date.now());
-  // Server verifies: `${wallet}:${timestamp}` signed by wallet's keypair
-  const message = `${keypair.address}:${timestamp}`;
+  // Include method+path in signature to prevent cross-endpoint replay
+  const message = method && path
+    ? `${keypair.address}:${timestamp}:${method}:${path}`
+    : `${keypair.address}:${timestamp}`;
   const signed = signMessage(message, keypair);
   return {
     'X-Wallet': keypair.address,

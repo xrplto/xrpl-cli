@@ -11,7 +11,7 @@
  */
 
 let jsonMode = false;
-let exitOnOutput = true; // Set to false for testing / library use
+let exitOnOutput = true;
 
 export function setJsonMode(enabled: boolean): void { jsonMode = enabled; }
 export function isJson(): boolean { return jsonMode; }
@@ -24,6 +24,12 @@ export function success(data: unknown): void {
     prettyPrint(data);
   }
   if (exitOnOutput) process.exit(0);
+}
+
+export function status(message: string): void {
+  if (!jsonMode) {
+    process.stderr.write(`${message}\n`);
+  }
 }
 
 export function error(message: string, code = 1, details: string | Record<string, unknown> | null = null): never {

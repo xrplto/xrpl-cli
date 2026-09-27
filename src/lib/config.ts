@@ -19,7 +19,7 @@ const DEFAULTS: Config = {
 // ─── API key obfuscation ─────────────────────────────────────
 function getObfuscationKey(): Buffer {
   const material = `${os.hostname()}:${process.getuid?.() ?? 0}:xrpl-cli-config-v1`;
-  return crypto.scryptSync(material, 'xrpl-cli-config-salt', 32);
+  return crypto.scryptSync(material, 'xrpl-cli-config-salt', 32, { N: 16384, r: 8, p: 2 });
 }
 
 function obfuscateApiKey(apiKey: string | null): string | null {
@@ -65,7 +65,8 @@ export function save(config: Config): void {
   if (toWrite.apiKey) {
     toWrite.apiKey = obfuscateApiKey(toWrite.apiKey);
   }
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(CONFIG_DIR, 0o700); } catch {}
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(toWrite, null, 2) + '\n', { mode: 0o600 });
 }
 
